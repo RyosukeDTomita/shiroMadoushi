@@ -1,10 +1,12 @@
-# template-repository-haskell <!--fix-me-->
+# shiroMadoushi
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 ## ABOUT
 
-Nix flakeベースのHaskellプロジェクトテンプレート。
+ふりかえり用のツールをまとめたモノレポ
+
+- [Libra](./Libra/): トニーシュワルツの4つのエネルギー状態を判定するツール
 
 ---
 
@@ -22,37 +24,9 @@ direnv allow
 > devShellに含まれるtricorderはhaskell.nixでビルドされるため、キャッシュ(`cache.iog.io` / `tweag-tricorder.cachix.org`)が使えないとGHCからのソースビルドになる。
 > 初回の`nix develop`で`flake.nix`の`nixConfig`を受け入れるか、`nix.conf`に`extra-substituters` / `extra-trusted-public-keys`を追加しておく。
 
-### run locally
+---
 
-```shell
-runghc -isrc -iapp app/Main.hs Haskell
-```
-
-```shell
-cabal run myapp
-```
-
-```shell
-# 引数を渡したい場合
-cabal run myapp -- <ARG>
-```
-
-### test
-
-```shell
-runghc -isrc test/Spec.hs
-# nix上でビルドしてtest-suiteを実行する(CIと同じ)
-nix flake check
-```
-
-### build
-
-```shell
-# nix storeに動的リンクしたバイナリ
-nix build
-# musl静的バイナリは初回はソースビルドになり遅いが、Nixユーザ以外に配れるバイナリを作れる。
-nix build .#static
-```
+## FOR DEVELOPER
 
 ### formatter
 
@@ -98,7 +72,7 @@ hoogle server --local
 
 ### ライブラリの追加
 
-- `myapp.cabal`の`build-depends`に足す。
+- 使うパッケージの`<Dir>/<name>.cabal`の`build-depends`に足す。
   - `direnv`不使用の場合には再度`nix develop`する
   - `flake.nix`のdevShellは`hpkgs.shellFor`で`.cabal`から依存を読む
 - パッケージはnixpkgs経由で取得し、Hackageからは取得しない。
@@ -108,4 +82,4 @@ hoogle server --local
 ### GHCのバージョンを上げる
 
 `flake.nix`の`ghcVersion`を変更する(`hpkgs` / `packages.static` / `treefmt.nix`のormolu・hlintはここを参照する)。
-`myapp.cabal`の`base`の下限も合わせて変更する。
+各パッケージの`.cabal`の`base`の下限も合わせて変更する。

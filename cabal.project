@@ -1,4 +1,6 @@
-packages: .
+-- モノレポの各パッケージ。新しいパッケージを足したらここと flake.nix の packageDirs に追加する。
+packages:
+    Libra/
 
 -- Hackage を一切参照しない。依存は nix develop(hpkgs.shellFor)が用意した
 -- nixpkgs のパッケージだけで解決し、~/.cabal/store に別の実体を作らない。

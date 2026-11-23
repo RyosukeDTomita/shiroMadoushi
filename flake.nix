@@ -1,5 +1,5 @@
 {
-  description = "Haskell project template (Nix flake)";
+  description = "shiroMadoushi: Haskell monorepo (Nix flake)";
 
   # tricorderはhaskell.nixでビルドされるため、キャッシュが無いとGHCからソースビルドになる。
   nixConfig = {
@@ -55,50 +55,82 @@
           _module.args = { inherit unstablePkgs ghcVersion; };
           programs.pinact.enable = pkgs.lib.mkForce false;
         };
-        # README/docs/flake等を変えてもビルドのハッシュが変わらないようにする。
-        projectSrc = pkgs.lib.fileset.toSource {
-          root = ./.;
-          fileset = pkgs.lib.fileset.unions [
-            ./myapp.cabal
-            ./src
-            ./app
-            ./test
-          ];
+        inherit (pkgs) lib;
+
+        # モノレポのパッケージ一覧(cabalのパッケージ名 = ディレクトリ)。
+        # パッケージを足したらこことcabal.projectのpackagesに追加する。
+        packageDirs = {
+          libra = ./Libra;
         };
-        # 依存はmyapp.cabalのbuild-dependsだけで管理する。
+
+        # .hs / .cabal だけをソースにし、README等を変えてもビルドのハッシュが変わらないようにする。
+        mkSrc =
+          dir:
+          lib.fileset.toSource {
+            root = dir;
+            fileset = lib.fileset.fileFilter (file: file.hasExt "hs" || file.hasExt "cabal") dir;
+          };
+
+        # 依存は各パッケージの.cabalのbuild-dependsだけで管理する。
         # callCabal2nixがbuild-dependsをhpkgsの同名パッケージに解決する。
-        myapp = hpkgs.callCabal2nix "myapp" projectSrc { };
+        haskellPackages = lib.mapAttrs (name: dir: hpkgs.callCabal2nix name (mkSrc dir) { }) packageDirs;
+
+        # musl静的バイナリ
+        staticPackages = lib.mapAttrs' (
+          name: dir:
+          lib.nameValuePair "${name}-static" (
+            pkgs.haskell.lib.justStaticExecutables (
+              pkgs.pkgsStatic.haskell.packages.${ghcVersion}.callCabal2nix name (mkSrc dir) { }
+            )
+          )
+        ) packageDirs;
+
+        cabalChecks = lib.mapAttrs' (
+          name: dir:
+          lib.nameValuePair "cabal-check-${name}" (
+            pkgs.runCommand "cabal-check-${name}"
+              {
+                nativeBuildInputs = [ pkgs.cabal-install ];
+              }
+              ''
+                export HOME=$TMPDIR
+                cd ${mkSrc dir}
+                cabal check
+                touch $out
+              ''
+          )
+        ) packageDirs;
       in
       {
         formatter = treefmtEval.config.build.wrapper;
 
         # `nix flake check`はファイルを更新せず、チェックだけを行う。(主にCI)
         # checks.*で書かれたものが走る。
-        checks.build = myapp;
-        checks.formatting = treefmtCheckEval.config.build.check self;
-        checks.cabal-check =
-          pkgs.runCommand "cabal-check"
-            {
-              nativeBuildInputs = [ pkgs.cabal-install ];
-            }
-            ''
-              export HOME=$TMPDIR
-              cd ${projectSrc}
-              cabal check
-              touch $out
-            '';
+        # build-<name>: ビルドとtest-suite / cabal-check-<name>: cabal check / formatting: treefmt
+        checks =
+          lib.mapAttrs' (name: drv: lib.nameValuePair "build-${name}" drv) haskellPackages
+          // cabalChecks
+          // {
+            formatting = treefmtCheckEval.config.build.check self;
+          };
 
-        # `nix build`で実行バイナリを生成する(nix storeに動的リンクする開発用)。
+        # `nix build .#<name>`で実行バイナリを生成する(nix storeに動的リンクする開発用)。
+        # `nix build`(default)は全パッケージをまとめたもの。
         # callCabal2nixはビルド時にtest-suiteも実行する。
-        packages.default = myapp;
-        # musl静的バイナリ
-        packages.static = pkgs.haskell.lib.justStaticExecutables (
-          pkgs.pkgsStatic.haskell.packages.${ghcVersion}.callCabal2nix "myapp" projectSrc { }
-        );
+        # `nix build .#<name>-static`でmusl静的バイナリ。
+        packages =
+          haskellPackages
+          // staticPackages
+          // {
+            default = pkgs.symlinkJoin {
+              name = "shiroMadoushi";
+              paths = lib.attrValues haskellPackages;
+            };
+          };
 
         # cabalはHackageではなく、nixからパッケージを取得する
         devShells.default = hpkgs.shellFor {
-          packages = _: [ myapp ];
+          packages = _: lib.attrValues haskellPackages;
           # 依存ライブラリのドキュメント込みのローカルHoogleを使えるようにする(`hoogle server --local`)。
           withHoogle = true;
           nativeBuildInputs = [
